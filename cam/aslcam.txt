@@ -65,7 +65,6 @@ def main():
         ord('g'): "G",
         ord('h'): "H",
         ord('i'): "I",
-        # ord('j'): "J",
         ord('k'): "K",
         ord('l'): "L",
         ord('m'): "M",
@@ -81,8 +80,8 @@ def main():
         ord('w'): "W",
         ord('x'): "X",
         ord('y'): "Y",
-        # ord('z'): "Z",
-        # skip j and z for now , it's motion-based
+        ord('z'): "Z",
+        # we can skip j for now since it's motion-based
     }
 
     while True:
