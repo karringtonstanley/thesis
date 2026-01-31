@@ -1,5 +1,5 @@
 # training.py
-# Minimal, well-commented MobileNetV3 transfer learning for A/B/C
+# MobileNetV3 transfer learning for A/B/C etc
 
 import json, random
 from pathlib import Path
@@ -10,18 +10,18 @@ from torch.utils.data import DataLoader, random_split, Subset
 from torchvision import datasets, transforms, models
 
 # -----------------------
-# Config (customize here)
+# Configuration board
 # -----------------------
-DATA_DIR   = "data_active"   # folder containing class subfolders e.g. A,B,C
-MODEL_DIR  = "models"
-IMG_SIZE   = 224
-EPOCHS     = 12              # start small (e.g., 5) to sanity check
-BATCH_SIZE = 16
-LR         = 1e-3            # AdamW learning rate
-VAL_SPLIT  = 0.2             # % for validation split
+DATA_DIR   = "data_active"   # folder containing A,B,C etc
+MODEL_DIR  = "models"        # saves trained model in models
+IMG_SIZE   = 224             # 224 is standard for imagenet
+EPOCHS     = 12              # # of runs through dataset
+BATCH_SIZE = 16              # images per batch
+LR         = 5e-4            # AdamW learning rate
+VAL_SPLIT  = 0.2             # % for validation split (80% trainingset/20%validationset)
 AUG        = True            # data augmentation on train set
 SAVE_PATH  = "min_asl.pth"
-SEED       = 42              # reproducibility
+SEED       = 42              # randomness
 
 # -----------------------
 # Device picker (MPS on Apple Silicon if available)
@@ -34,7 +34,7 @@ def device():
     return torch.device("cpu")
 
 # -----------------------
-# Transforms
+# augments image
 # -----------------------
 def tfms_train(sz: int, aug: bool):
     """Train transforms: resize -> (optional) aug -> toTensor -> normalize."""
@@ -43,7 +43,7 @@ def tfms_train(sz: int, aug: bool):
         ops += [
             transforms.RandomHorizontalFlip(p=0.4),
             transforms.RandomRotation(degrees=10),
-            # Add more if you want (ColorJitter, etc.)
+            # flips and turns image 
         ]
     ops += [
         transforms.ToTensor(),
@@ -67,6 +67,7 @@ def tfms_val(sz: int):
 
 # -----------------------
 # Model: MobileNetV3-Small head swapped for #classes
+#
 # -----------------------
 def build_model(num_classes: int):
     m = models.mobilenet_v3_small(
@@ -77,13 +78,13 @@ def build_model(num_classes: int):
     return m
 
 # -----------------------
-# One epoch (train or eval)
+# One epoch 
 # -----------------------
 def run_epoch(model, loader, dev, criterion, optimizer=None):
-    is_train = optimizer is not None
+    is_train = optimizer is not None # if optimizer exists, then train, if not then eval
     model.train(is_train)
 
-    total, correct, loss_sum = 0, 0, 0.0
+    total, correct, loss_sum = 0, 0, 0.0 # metrics
     for xb, yb in loader:
         xb, yb = xb.to(dev), yb.to(dev)
 
@@ -97,12 +98,12 @@ def run_epoch(model, loader, dev, criterion, optimizer=None):
             loss.backward()
             optimizer.step()
 
-        loss_sum += loss.item() * xb.size(0)
+        loss_sum += loss.item() * xb.size(0) #accumulates the loss
         preds = logits.argmax(1)
-        correct += (preds == yb).sum().item()
+        correct += (preds == yb).sum().item() #accumulates correct predictions
         total += xb.size(0)
 
-    avg_loss = loss_sum / max(1, total)
+    avg_loss = loss_sum / max(1, total) #avg loss and accuracy for a epoch
     acc = correct / max(1, total)
     return acc, avg_loss
 
@@ -114,7 +115,7 @@ def main():
     torch.manual_seed(SEED)
     Path(MODEL_DIR).mkdir(exist_ok=True)
 
-    # 1) Build a plain dataset to get classes and a stable split of indices
+    # 1) Build a plain dataset to read classes 
     plain_ds = datasets.ImageFolder(DATA_DIR)
     classes = plain_ds.classes  # e.g., ['A','B','C']
 
