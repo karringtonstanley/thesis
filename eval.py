@@ -1,15 +1,14 @@
-"""
-eval.py — Evaluate a saved ASL model checkpoint on your dataset.
+""""
+eval.py 
 
 Run:
     python eval.py --data data_active --ckpt models/min_asl.pth --bs 32
 
-What it prints:
-- Classes list (e.g., ['A','B','C'])
+prints:
 - Overall accuracy
 - Per-class accuracy
 - Confusion matrix
-"""
+"""""
 
 from pathlib import Path
 import argparse
@@ -18,14 +17,14 @@ import torch
 from torch.utils.data import DataLoader
 from torchvision import datasets, transforms, models
 
-# ---------- small helpers ----------
+# ---------- using Apple MPS GPU for computing, if that doesnt work uses NVIDIA GPU, if that doesnt work uses CPU ----------
 def device():
     if torch.backends.mps.is_available():
         return torch.device("mps")
     if torch.cuda.is_available():
         return torch.device("cuda")
     return torch.device("cpu")
-
+# resizing the models size, translating to tensor, normalize using imagenet mean/std
 def tfms_val(sz: int):
     return transforms.Compose([
         transforms.Resize((sz, sz)),
@@ -33,7 +32,7 @@ def tfms_val(sz: int):
         transforms.Normalize([0.485, 0.456, 0.406],
                              [0.229, 0.224, 0.225]),
     ])
-
+# the use of MobileNetV3 as our model 
 def build_model(num_classes: int, imgnet_weights=True):
     if imgnet_weights:
         m = models.mobilenet_v3_small(
@@ -46,6 +45,7 @@ def build_model(num_classes: int, imgnet_weights=True):
     return m
 # -----------------------------------
 
+# main function: loads the datasets and mobilenetv3 model, prints the evalutation results
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--data", default="data_active", help="root folder with class subfolders")
@@ -58,7 +58,7 @@ def main():
     data_root = Path(args.data)
     ckpt_path = Path(args.ckpt)
 
-    # dataset/dataloader
+    # loads the datasets from the image folder
     ds = datasets.ImageFolder(str(data_root), transform=tfms_val(args.img_size))
     classes = ds.classes
     dl = DataLoader(ds, batch_size=args.bs, shuffle=False, num_workers=0)
@@ -72,26 +72,31 @@ def main():
     model.eval()
 
     # eval loop
+    # counts total number evaluted and total numer correct
+    # cm creates the confusion matrix
+    # counts total number in the class and total number correct
     total, correct = 0, 0
     cm = np.zeros((len(classes), len(classes)), dtype=int)
     per_class_total = np.zeros(len(classes), dtype=int)
     per_class_correct = np.zeros(len(classes), dtype=int)
 
+    # no gradients
     with torch.no_grad():
         for xb, yb in dl:
             xb, yb = xb.to(dev), yb.to(dev)
-            logits = model(xb)
-            preds = logits.argmax(1)
+            logits = model(xb) # raw scores 
+            preds = logits.argmax(1) # predicts the class index per example 
 
             total += yb.size(0)
             correct += (preds == yb).sum().item()
-
+            # update the confusion matrix
             for p, y in zip(preds.cpu().tolist(), yb.cpu().tolist()):
                 cm[y, p] += 1
                 per_class_total[y] += 1
                 if p == y:
                     per_class_correct[y] += 1
 
+    # printing the results
     acc = correct / max(1, total)
     print("Classes:", classes)
     print(f"Overall accuracy: {acc:.3f}")

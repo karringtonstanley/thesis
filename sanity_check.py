@@ -112,7 +112,7 @@ def main():
     print("Logits shape:", logits.shape)
 
     # 5) Quick success signal
-    print("\n✅ Sanity check passed: dataset + model + forward pass look good.")
+    print(" Sanity check passed: dataset + model + forward pass look good.")
 
 if __name__ == "__main__":
     main()
