@@ -1,4 +1,4 @@
-# Use Python 3.11 (recommended)
+# Use Python 3.11
 # create with: python3.11 -m venv .venv && source .venv/bin/activate
 
 --only-binary=:all:
