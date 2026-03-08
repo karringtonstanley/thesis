@@ -22,3 +22,4 @@ data/
 data_active/
 data_capture/
 images/
+backend/.env
