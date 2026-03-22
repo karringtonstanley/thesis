@@ -2,15 +2,6 @@
 
 #works similar to aslcam.py, except it uses trained model to predict letter
 
-#Steps
-#open trained mobilenetv3 model 
-#1 - Read frame from webcam
-#2 detect hand
-#3 put bounding box over hand
-#4 resize to 224x224 (same for training model)
-#5 normailize using the same mean/std used during training
-#6 run prediction letter model 
- 
 # cam/asl_live_min.py
 
 from pathlib import Path
@@ -24,22 +15,22 @@ import mediapipe as mp
 from collections import deque
 from datetime import datetime
 
-# -------------------------
+# 
 # camera settings
-# -------------------------
-CKPT_PATH = "models/min_asl.pth" #trained checkpoint 
+# 
+CKPT_PATH = str(Path(__file__).resolve().parents[1] / "models" / "min_asl.pth") #best checkpoint 
 CAM_INDEX = 0            # 0 = default Mac camera
 CROP_PAD = 40            # extra pixels around detected hand
 MIN_CONF = 0.60          # green label if confidence >= this
 START_MIRROR = True      # True = selfie view
 
-# --- Smoothing and debug settings ---
+# debug settings 
 SMOOTH_FRAMES = 8        # number of frames to average probs over
 SHOW_CROP_PREVIEW = False  # toggle with 'c'
 DRAW_LANDMARKS = False      # toggle with 'l'
 SAVE_LABEL_KEYS = True      # press letter keys to save crop to that label
 
-# ImageNet stats (must match training transforms)
+# ImageNet stats 
 IMAGENET_MEAN = np.array([0.485, 0.456, 0.406], dtype=np.float32)
 IMAGENET_STD = np.array([0.229, 0.224, 0.225], dtype=np.float32)
 
@@ -49,8 +40,8 @@ def pick_device() -> torch.device:
         return torch.device("mps")
     return torch.device("cpu")
 
-# recreating the mobilenetv3 with training involved
-# replaces the last layer so it can match my ASL data
+# building model
+# replaces the last layer 
 def build_model(num_classes: int) -> nn.Module:
     m = models.mobilenet_v3_small(
         weights=models.MobileNet_V3_Small_Weights.DEFAULT
@@ -59,37 +50,37 @@ def build_model(num_classes: int) -> nn.Module:
     m.classifier[-1] = nn.Linear(in_feats, num_classes)
     return m
 
-# converts the opencn amera to a normalized model to be used as a tensor
+# converts the opencn amera to a normalized model 
 # goes thorugh resizing and normalizing to match training preprocessing
-def preprocess_crop(bgr_crop: np.ndarray, size: int) -> torch.Tensor:
-    img = cv2.resize(bgr_crop, (size, size), interpolation=cv2.INTER_AREA)
-    img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB).astype(np.float32) / 255.0
-    img = (img - IMAGENET_MEAN) / IMAGENET_STD
+def preprocess_crop(bgr_crop: np.ndarray, size: int) -> torch.Tensor: #covert to tensor 
+    img = cv2.resize(bgr_crop, (size, size), interpolation=cv2.INTER_AREA) #resize 
+    img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB).astype(np.float32) / 255.0 #change pixels to 0-1
+    img = (img - IMAGENET_MEAN) / IMAGENET_STD #uses imagenet stats
     img = img.transpose(2, 0, 1)  # HWC -> CHW
-    return torch.from_numpy(img).unsqueeze(0)
+    return torch.from_numpy(img).unsqueeze(0) #retuned shape is [1, C, H, W]
 
 # bounding box around the hand
 def hand_bbox_from_landmarks(results, W: int, H: int, pad: int) -> tuple[int, int, int, int] | None:
     if not results.multi_hand_landmarks:
         return None
 
-    lm = results.multi_hand_landmarks[0]
+    lm = results.multi_hand_landmarks[0] # x and y coordinates 
     xs = [p.x for p in lm.landmark]
     ys = [p.y for p in lm.landmark]
 
-    # Raw pixel bounds (rect)
+    # make x and y coordiantes into raw pixel bounds 
     x0 = min(xs) * W
     y0 = min(ys) * H
     x1 = max(xs) * W
     y1 = max(ys) * H
 
-    # Make it square by expanding the shorter side
+    # finds middle and w and h of box 
     cx = (x0 + x1) / 2.0
     cy = (y0 + y1) / 2.0
     w = (x1 - x0)
     h = (y1 - y0)
     side = max(w, h) + 2 * pad
-
+    #square crop
     x0 = int(max(0, cx - side / 2))
     y0 = int(max(0, cy - side / 2))
     x1 = int(min(W, cx + side / 2))
@@ -99,28 +90,28 @@ def hand_bbox_from_landmarks(results, W: int, H: int, pad: int) -> tuple[int, in
         return None
     return (x0, y0, x1, y1)
 
-# main function, opens the webcam, detects the hand, runs model, shows predictions
+# main functions
 def main() -> None:
     print("asl_live_min.py starting...")
 
-    #  Load checkpoint 
+    #  Load checkpoint , if it doesnt exist run training first
     if not Path(CKPT_PATH).exists():
         raise SystemExit(f"Checkpoint not found: {CKPT_PATH}. Run training.py first.")
 
     dev = pick_device()
-    print("Using device:", dev)
+    print("Using device:", dev) 
 
-    ckpt = torch.load(CKPT_PATH, map_location=dev)
-    classes = ckpt["classes"]
-    img_size = int(ckpt.get("img_size", 224))
+    ckpt = torch.load(CKPT_PATH, map_location=dev) #load ckpt data
+    classes = ckpt["classes"] # class names 
+    img_size = int(ckpt.get("img_size", 224)) # image size 
     print(f"Loaded checkpoint with {len(classes)} classes. img_size={img_size}")
 
-    #rebuilds mobilenetv3 model
+    #rebuilds mobilenetv3 model, laod trained weights
     model = build_model(num_classes=len(classes)).to(dev)
     model.load_state_dict(ckpt["state_dict"])
     model.eval()
 
-    # opens camera
+    # opens cam
     cap = cv2.VideoCapture(CAM_INDEX, cv2.CAP_AVFOUNDATION)
     print("Camera opened?", cap.isOpened())
     if not cap.isOpened():
@@ -129,11 +120,11 @@ def main() -> None:
     mirror = START_MIRROR
     show_box = True
     show_crop = SHOW_CROP_PREVIEW
-    prob_hist = deque(maxlen=max(1, SMOOTH_FRAMES))
+    prob_hist = deque(maxlen=max(1, SMOOTH_FRAMES)) # store recent predicitons
     capture_root = Path("data_capture")
     capture_root.mkdir(exist_ok=True)
 
-    # loads mediapipe hands
+    # loads mediapipe hand tracking 
     mp_hands = mp.solutions.hands
     mp_draw = mp.solutions.drawing_utils
     draw_landmarks = DRAW_LANDMARKS
@@ -154,11 +145,11 @@ def main() -> None:
                 break
 
             if mirror:
-                frame = cv2.flip(frame, 1) # selfie like camera
+                frame = cv2.flip(frame, 1) # selfie mode 
 
             H, W = frame.shape[:2]
 
-            # MediaPipe expects RGB
+            # MediaPipe expects RGB, convert 
             rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
             results = hands.process(rgb)
                 # draws mediapipe landmarks on hands
@@ -184,7 +175,7 @@ def main() -> None:
                 x0 = (W - side) // 2
                 crop = frame[y0:y0 + side, x0:x0 + side].copy()
 
-            status = "HAND" if hand_found else "NO HAND (using center crop)"
+            status = "HAND" if hand_found else "NO HAND (using center crop)" # detect hand status
             cv2.putText(
                 frame,
                 status,
@@ -196,9 +187,9 @@ def main() -> None:
                 cv2.LINE_AA,
             )
 
-            # Preprocess and predict
+            # Preprocess to match training and predict
             x = preprocess_crop(crop, img_size).to(dev)
-            with torch.no_grad():
+            with torch.no_grad(): # run model and convert logits to probability 
                 logits = model(x)
                 probs = torch.softmax(logits, dim=1)[0].cpu().numpy()
 
@@ -206,14 +197,14 @@ def main() -> None:
             prob_hist.append(probs)
             avg_probs = np.mean(prob_hist, axis=0)
 
-            pred_idx = int(avg_probs.argmax())
-            pred_lbl = classes[pred_idx]
-            pred_conf = float(avg_probs[pred_idx])
+            pred_idx = int(avg_probs.argmax()) #predict most likely class
+            pred_lbl = classes[pred_idx] #predict most likely class
+            pred_conf = float(avg_probs[pred_idx]) #predict most likely class
 
             # Color: green if confident, orange if else
             color = (0, 255, 0) if pred_conf >= MIN_CONF else (0, 165, 255)
 
-            # Mshow prediciton
+            # show prediction and label
             cv2.putText(
                 frame,
                 f"{pred_lbl} ({pred_conf:.2f})",
@@ -228,7 +219,7 @@ def main() -> None:
             if show_crop:
                 cv2.imshow("ASL Crop", crop) # second window
 
-            cv2.imshow("ASL Live - ESC/x quit", frame)
+            cv2.imshow("ASL Live - ESC/x quit", frame) # main window
             key = cv2.waitKey(1) & 0xFF
 
             # Quit on ESC or 'x'
